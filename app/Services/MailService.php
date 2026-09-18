@@ -83,6 +83,38 @@ class MailService
         ));
     }
 
+    /** Sends still available today for one specific mailer. */
+    public static function remainingCapacityFor(string $mailer): int
+    {
+        $today = now()->toDateString();
+
+        return max(0, (self::LIMITS[$mailer] ?? 0) - (int) Cache::get(self::key($mailer, $today), 0));
+    }
+
+    /**
+     * Sends through exactly one named mailer — no round-robin, no fallback
+     * to a different provider. Used for marketing campaigns: rotating a
+     * single sending domain across 5 different ESPs' IP pools/DKIM
+     * selectors looks like spoofing to spam filters and prevents any one
+     * provider from building real reputation for the domain. Throws
+     * instead of falling back, so a caller (SendMarketingEmailJob) can
+     * leave the recipient 'pending' and retry once more budget frees up,
+     * rather than quietly burning a different provider's daily quota.
+     */
+    public static function sendVia($mailable, string $to, string $mailer): void
+    {
+        if (! in_array($mailer, self::MAILERS, true)) {
+            throw new \InvalidArgumentException("Unknown mailer: {$mailer}");
+        }
+
+        if (self::remainingCapacityFor($mailer) <= 0) {
+            throw new \RuntimeException("{$mailer} has no remaining send capacity today.");
+        }
+
+        Mail::mailer($mailer)->to($to)->send($mailable);
+        self::increment($mailer);
+    }
+
     public static function resetCounts(): void
     {
         $today = now()->toDateString();

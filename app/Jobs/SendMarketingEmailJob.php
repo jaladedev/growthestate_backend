@@ -56,13 +56,20 @@ class SendMarketingEmailJob implements ShouldQueue
         }
 
         try {
-            MailService::send(
+            MailService::sendVia(
                 new MarketingMail($this->campaign->subject, $this->campaign->body_html, $this->recipient),
                 $this->recipient->email,
+                'resend',
             );
 
             $this->recipient->update(['status' => 'sent', 'sent_at' => now()]);
             $this->campaign->increment('sent_count');
+        } catch (\RuntimeException $e) {
+            // Resend's daily cap was hit between dispatch and execution
+            // (e.g. transactional mail used up the shared quota). Leave the
+            // recipient 'pending' — the next campaigns:process tick will
+            // pick it back up once quota frees up. Not a delivery failure.
+            return;
         } catch (Throwable $e) {
             $this->recipient->update(['status' => 'failed', 'error' => $e->getMessage()]);
             $this->campaign->increment('failed_count');

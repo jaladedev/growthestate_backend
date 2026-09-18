@@ -13,16 +13,17 @@ use Illuminate\Support\Str;
 class MarketingCampaignService
 {
     /**
-     * Sends are shared with transactional mail (deposit/withdrawal/OTP
-     * emails) through the same provider pool in MailService. This is how
-     * much of MailService::remainingCapacity() a single dispatch run is
-     * allowed to spend, so a large campaign can never starve those.
+     * Marketing sends go through Resend exclusively (see MailService::sendVia)
+     * so the domain builds consistent reputation with one provider instead of
+     * rotating IP pools/DKIM selectors across 5 — this reserve just leaves
+     * Resend some headroom for transactional mail that lands on it via the
+     * normal round-robin the same day.
      */
-    private const RESERVE_FOR_TRANSACTIONAL = 60;
+    private const RESERVE_FOR_TRANSACTIONAL = 15;
 
     /** Cap per scheduler tick even when capacity allows more, so a burst
      *  of sends doesn't hit provider APIs all at once. */
-    private const MAX_PER_RUN = 150;
+    private const MAX_PER_RUN = 80;
 
     /** Seconds between each queued send within a single run. */
     private const STAGGER_SECONDS = 3;
@@ -102,7 +103,7 @@ class MarketingCampaignService
 
         $budget = min(
             self::MAX_PER_RUN,
-            max(0, MailService::remainingCapacity() - self::RESERVE_FOR_TRANSACTIONAL),
+            max(0, MailService::remainingCapacityFor('resend') - self::RESERVE_FOR_TRANSACTIONAL),
         );
 
         if ($budget <= 0) {
