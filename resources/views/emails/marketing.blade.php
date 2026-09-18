@@ -14,12 +14,12 @@
 
                     <!-- Logo -->
                     <tr>
-                        <td align="center" style="padding-bottom:32px;">
+                        <td align="center" style="padding-bottom:28px;">
                             <img
                                 src="{{ $logoUrl ?? asset('images/reu-logo.png') }}"
                                 alt="REU.ng"
-                                width="120"
-                                style="display:block;height:auto;max-width:120px;"
+                                width="84"
+                                style="display:block;height:auto;max-width:84px;"
                             />
                         </td>
                     </tr>
