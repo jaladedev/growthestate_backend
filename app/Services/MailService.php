@@ -67,6 +67,22 @@ class MailService
         return $counts;
     }
 
+    /**
+     * Total sends still available today across every mailer, before any
+     * provider is exhausted. Used by MarketingCampaignService to size
+     * bulk-send batches so campaigns never crowd out transactional mail
+     * (deposits, withdrawals, verification codes) sharing the same pool.
+     */
+    public static function remainingCapacity(): int
+    {
+        $today = now()->toDateString();
+
+        return array_sum(array_map(
+            fn ($mailer) => max(0, self::LIMITS[$mailer] - (int) Cache::get(self::key($mailer, $today), 0)),
+            self::MAILERS,
+        ));
+    }
+
     public static function resetCounts(): void
     {
         $today = now()->toDateString();

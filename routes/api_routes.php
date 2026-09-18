@@ -28,6 +28,8 @@ use App\Http\Controllers\ComplianceController;
 use App\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\MonnifyWebhookController;
 use App\Http\Controllers\OpayWebhookController;
+use App\Http\Controllers\MailCampaignController;
+use App\Http\Controllers\MarketingUnsubscribeController;
 use Illuminate\Support\Facades\Queue;
 
 // =============================================================================
@@ -108,6 +110,9 @@ Route::post('/waitlist/check', [WaitlistController::class, 'check'])->middleware
 
 Route::get('/verify/{verifyToken}', [CertificateController::class, 'verify'])
     ->middleware('throttle:30,1');
+
+Route::get('/marketing/unsubscribe/{token}', MarketingUnsubscribeController::class)
+    ->middleware('throttle:20,1');
 
 // ── Payment webhooks & OPay redirects ─────────────────────────────────────
 // Deliberately NOT included in this file — they're registered once,
@@ -261,6 +266,13 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1', 'audit.log'])->prefix
     Route::delete('/users/{user}',             [AdminUserController::class, 'destroy'])->middleware('permission:users.delete');
 
     // ── Roles ─────────────────────────────────────────────────────────────────
+    // ── Marketing / bulk mail campaigns ─────────────────────────────────────
+    Route::get('/mail-campaigns',                       [MailCampaignController::class, 'index'])->middleware('permission:marketing.view');
+    Route::get('/mail-campaigns/{mailCampaign}',         [MailCampaignController::class, 'show'])->middleware('permission:marketing.view');
+    Route::post('/mail-campaigns',                       [MailCampaignController::class, 'store'])->middleware('permission:marketing.manage');
+    Route::patch('/mail-campaigns/{mailCampaign}/schedule', [MailCampaignController::class, 'schedule'])->middleware('permission:marketing.manage');
+    Route::patch('/mail-campaigns/{mailCampaign}/cancel',   [MailCampaignController::class, 'cancel'])->middleware('permission:marketing.manage');
+
     Route::get('/roles',                       [AdminRoleController::class, 'index'])->middleware('permission:roles.manage');
     Route::get('/users/{user}/roles',          [AdminRoleController::class, 'userRoles'])->middleware('permission:roles.manage');
     Route::post('/users/{user}/roles',         [AdminRoleController::class, 'assignRole'])->middleware('permission:roles.manage');
