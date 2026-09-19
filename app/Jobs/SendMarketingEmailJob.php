@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\MailCapacityExhaustedException;
 use App\Mail\MarketingMail;
 use App\Models\MailCampaign;
 use App\Models\MailCampaignRecipient;
@@ -64,13 +65,19 @@ class SendMarketingEmailJob implements ShouldQueue
 
             $this->recipient->update(['status' => 'sent', 'sent_at' => now()]);
             $this->campaign->increment('sent_count');
-        } catch (\RuntimeException $e) {
+        } catch (MailCapacityExhaustedException $e) {
             // Resend's daily cap was hit between dispatch and execution
             // (e.g. transactional mail used up the shared quota). Leave the
             // recipient 'pending' — the next campaigns:process tick will
             // pick it back up once quota frees up. Not a delivery failure,
             // but log it — otherwise a stuck campaign is invisible in every
             // metric (sent/failed counters, worker logs) at once.
+            //
+            // Deliberately its own exception type, not a bare
+            // \RuntimeException — provider SDKs throw \RuntimeException for
+            // their own unrelated failures (unverified domain, bad API key,
+            // rejected recipient), and those must NOT be silently deferred
+            // forever like a real capacity issue. See MailCapacityExhaustedException.
             \Log::warning('Marketing send deferred: mailer capacity exhausted', [
                 'campaign_id'  => $this->campaign->id,
                 'recipient_id' => $this->recipient->id,

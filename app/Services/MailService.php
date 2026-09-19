@@ -108,7 +108,7 @@ class MailService
         }
 
         if (self::remainingCapacityFor($mailer) <= 0) {
-            throw new \RuntimeException("{$mailer} has no remaining send capacity today.");
+            throw new \App\Exceptions\MailCapacityExhaustedException("{$mailer} has no remaining send capacity today.");
         }
 
         Mail::mailer($mailer)->to($to)->send($mailable);
