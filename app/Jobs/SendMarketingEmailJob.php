@@ -68,7 +68,14 @@ class SendMarketingEmailJob implements ShouldQueue
             // Resend's daily cap was hit between dispatch and execution
             // (e.g. transactional mail used up the shared quota). Leave the
             // recipient 'pending' — the next campaigns:process tick will
-            // pick it back up once quota frees up. Not a delivery failure.
+            // pick it back up once quota frees up. Not a delivery failure,
+            // but log it — otherwise a stuck campaign is invisible in every
+            // metric (sent/failed counters, worker logs) at once.
+            \Log::warning('Marketing send deferred: mailer capacity exhausted', [
+                'campaign_id'  => $this->campaign->id,
+                'recipient_id' => $this->recipient->id,
+                'message'      => $e->getMessage(),
+            ]);
             return;
         } catch (Throwable $e) {
             $this->recipient->update(['status' => 'failed', 'error' => $e->getMessage()]);
