@@ -124,48 +124,4 @@ class MailCampaignController extends Controller
 
         return response()->json(['success' => true, 'data' => $mailCampaign->fresh()]);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // DIAGNOSTICS  GET /admin/mail-campaigns/{mailCampaign}/diagnostics
-    // TEMPORARY — for investigating a stuck campaign without shell access.
-    // Read-only. Safe to remove once the investigation is closed.
-    // ─────────────────────────────────────────────────────────────────────────
-    public function diagnostics(MailCampaign $mailCampaign)
-    {
-        $recipients = $mailCampaign->recipients()
-            ->select('id', 'email', 'status', 'sent_at', 'error', 'updated_at')
-            ->orderByDesc('updated_at')
-            ->limit(50)
-            ->get();
-
-        $logTail = [];
-        $logPath = storage_path('logs/laravel.log');
-        if (is_file($logPath)) {
-            // Cheap tail: read the last ~64KB rather than the whole file,
-            // which can be large in production.
-            $handle = fopen($logPath, 'r');
-            $size   = filesize($logPath);
-            fseek($handle, max(0, $size - 65536));
-            $chunk = fread($handle, 65536);
-            fclose($handle);
-
-            $logTail = array_slice(
-                array_filter(explode("\n", $chunk), fn ($l) => trim($l) !== ''),
-                -200,
-            );
-        }
-
-        return response()->json([
-            'success' => true,
-            'data'    => [
-                'campaign'          => $mailCampaign->only([
-                    'id', 'status', 'scheduled_at', 'started_at', 'completed_at',
-                    'sent_count', 'failed_count', 'skipped_count',
-                ]),
-                'mail_provider_counts' => \App\Services\MailService::counts(),
-                'recipients'           => $recipients,
-                'recent_log_lines'     => $logTail,
-            ],
-        ]);
-    }
 }
