@@ -272,6 +272,10 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1', 'audit.log'])->prefix
     Route::post('/mail-campaigns',                       [MailCampaignController::class, 'store'])->middleware('permission:marketing.manage');
     Route::patch('/mail-campaigns/{mailCampaign}/schedule', [MailCampaignController::class, 'schedule'])->middleware('permission:marketing.manage');
     Route::patch('/mail-campaigns/{mailCampaign}/cancel',   [MailCampaignController::class, 'cancel'])->middleware('permission:marketing.manage');
+    // TEMPORARY — remove once the stuck-campaign investigation is closed.
+    // Read-only: surfaces MailService::counts() and per-recipient status so
+    // a stuck campaign can be diagnosed without Render shell access.
+    Route::get('/mail-campaigns/{mailCampaign}/diagnostics', [MailCampaignController::class, 'diagnostics'])->middleware('permission:marketing.view');
 
     Route::get('/roles',                       [AdminRoleController::class, 'index'])->middleware('permission:roles.manage');
     Route::get('/users/{user}/roles',          [AdminRoleController::class, 'userRoles'])->middleware('permission:roles.manage');
