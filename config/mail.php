@@ -112,6 +112,17 @@ return [
         'address' => env('MAIL_FROM_ADDRESS', 'no-reply@reu.ng'),
         'name' => env('MAIL_FROM_NAME', 'REU.ng'),
     ],
+
+    // Kept separate from 'from' on purpose: mail sends FROM no-reply@reu.ng
+    // (keeps automated/bulk sending isolated from the support inbox for
+    // deliverability/reputation reasons), but customer-facing emails often
+    // say "reply to this email" — that reply needs to land somewhere a
+    // person actually reads. Applied per-Mailable via ->replyTo(...), see
+    // App\Mail\MarketingMail and friends.
+    'reply_to' => [
+        'address' => env('MAIL_REPLY_TO_ADDRESS', 'support@reu.ng'),
+        'name' => env('MAIL_REPLY_TO_NAME', 'REU.ng Support'),
+    ],
     
     // 'to' => [
     //     'address' => env('SUPPORT_ADDRESS', 'support@reu.ng'),

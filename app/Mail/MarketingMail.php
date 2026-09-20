@@ -20,6 +20,7 @@ class MarketingMail extends Mailable
     public function build()
     {
         return $this->subject($this->subjectLine)
+            ->replyTo(config('mail.reply_to.address'), config('mail.reply_to.name'))
             ->view('emails.marketing')
             ->with([
                 'bodyHtml'        => $this->bodyHtml,

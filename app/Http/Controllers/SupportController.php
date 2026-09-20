@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SupportTicket;
 use App\Models\SupportMessage;
+use App\Models\User;
 use App\Models\Faq;
 use App\Models\Deposit;
 use App\Models\Withdrawal;
@@ -111,7 +112,7 @@ class SupportController extends Controller
                     'body'        => $lastMessage,
                 ]);
 
-                $this->notifyAdminHighPriority($ticket);
+                $this->notifyAdminNewTicket($ticket, $user);
 
                 return response()->json([
                     'success' => true,
@@ -255,9 +256,7 @@ class SupportController extends Controller
             'attachment_path' => $attachmentPath,
         ]);
 
-        if ($priority === 'high') {
-            $this->notifyAdminHighPriority($ticket);
-        }
+        $this->notifyAdminNewTicket($ticket, $user);
 
         return response()->json([
             'success' => true,
@@ -312,6 +311,8 @@ class SupportController extends Controller
             'body'            => $request->message,
             'attachment_path' => $attachmentPath,
         ]);
+
+        $this->notifyAdminNewTicket($ticket);
 
         return response()->json([
             'success'   => true,
@@ -737,21 +738,31 @@ PROMPT;
      * Notify admins of a newly created high-priority ticket via Slack log channel.
      * Extend with Mail, Push Notification, etc. as needed.
      */
-    private function notifyAdminHighPriority(SupportTicket $ticket): void
+    private function notifyAdminNewTicket(SupportTicket $ticket, ?User $user = null): void
     {
-        try {
-            $token = config('services.telegram.bot_token');
+        $emoji = match ($ticket->priority) {
+            'high'   => '🔴',
+            'normal' => '🟡',
+            default  => '🟢',
+        };
 
-            Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
-                'chat_id'    => config('services.telegram.chat_id'),
-                'text'       => "🔴 High Priority Ticket\n#{$ticket->reference} — {$ticket->subject}",
-                'parse_mode' => 'Markdown',
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('Telegram notification failed', [
-                'ticket'    => $ticket->reference,
-                'error'     => $e->getMessage(),
-            ]);
-        }
+        $submitter = $user
+            ? "{$user->name} ({$user->email})"
+            : "{$ticket->guest_name} ({$ticket->guest_email}) — guest";
+
+        // Uses the shared telegram log channel (see App\Logging\TelegramLogger)
+        // rather than a one-off Http::post, so this gets the same truncation,
+        // timeout, and failure-logging behavior as every other Telegram alert
+        // in the app for free, and never blocks/breaks ticket creation if
+        // Telegram itself is down.
+        Log::channel('telegram')->warning(
+            "{$emoji} New Support Ticket — {$ticket->priority}",
+            [
+                'reference' => $ticket->reference,
+                'subject'   => $ticket->subject,
+                'category'  => $ticket->category,
+                'from'      => $submitter,
+            ]
+        );
     }
 }
