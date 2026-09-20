@@ -17,7 +17,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseController extends Controller
@@ -30,7 +29,7 @@ class PurchaseController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function preview(Request $request, $landId)
     {
-        $user = JWTAuth::parseToken()->authenticate();
+        $user = $request->user();
 
         $request->validate([
             'units'       => ['required', 'integer', 'min:1'],
@@ -107,7 +106,7 @@ class PurchaseController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function purchase(Request $request, $landId)
     {
-        $user = JWTAuth::parseToken()->authenticate();
+        $user = $request->user();
 
         $request->validate([
             'units'       => ['required', 'integer', 'min:1'],
@@ -349,7 +348,7 @@ class PurchaseController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function sellUnits(Request $request, $landId)
     {
-        $user = JWTAuth::parseToken()->authenticate();
+        $user = $request->user();
 
         $request->validate([
             'units' => ['required', 'integer', 'min:1'],

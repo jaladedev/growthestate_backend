@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class WithdrawalController extends Controller
 {
@@ -90,7 +89,7 @@ class WithdrawalController extends Controller
 
     public function requestWithdrawal(Request $request)
     {
-        $user = JWTAuth::parseToken()->authenticate();
+        $user = $request->user();
 
         $request->validate([
             'amount'          => 'required|integer|min:500000',

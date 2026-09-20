@@ -83,21 +83,27 @@ class KycController extends Controller
             'pep_details'      => 'required_if:is_pep,true|nullable|string|max:500',
         ]);
 
-        $idFrontPath = $request->hasFile('id_front')
-            ? $request->file('id_front')->store('kyc/ids', 'r2')
-            : null;
-
-        $idBackPath = $request->hasFile('id_back')
-            ? $request->file('id_back')->store('kyc/ids', 'r2')
-            : null;
-
-        $selfiePath = $request->hasFile('selfie')
-            ? $request->file('selfie')->store('kyc/selfies', 'r2')
-            : null;
-
-        $uploadedPaths = array_filter([$idFrontPath, $idBackPath, $selfiePath]);
+        $idFrontPath   = null;
+        $idBackPath    = null;
+        $selfiePath    = null;
+        $uploadedPaths = [];
 
         try {
+            if ($request->hasFile('id_front')) {
+                $idFrontPath     = $request->file('id_front')->store('kyc/ids', 'r2');
+                $uploadedPaths[] = $idFrontPath;
+            }
+
+            if ($request->hasFile('id_back')) {
+                $idBackPath      = $request->file('id_back')->store('kyc/ids', 'r2');
+                $uploadedPaths[] = $idBackPath;
+            }
+
+            if ($request->hasFile('selfie')) {
+                $selfiePath      = $request->file('selfie')->store('kyc/selfies', 'r2');
+                $uploadedPaths[] = $selfiePath;
+            }
+
             $kyc = DB::transaction(function () use ($user, $data, $idFrontPath, $idBackPath, $selfiePath) {
                 return $user->kycVerification()->updateOrCreate(
                     ['user_id' => $user->id],

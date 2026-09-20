@@ -70,33 +70,33 @@ Route::get('/up', function () {
     return response()->json(['status' => 'ok'], 200);
 });
 Route::post('/register', [AuthController::class, 'register'])
-    ->middleware('throttle:5,60');
+    ->middleware('throttle:5,60,register');
 
 Route::post('/login', [AuthController::class, 'login'])
-    ->middleware('throttle:10,5');
+    ->middleware('throttle:10,5,login');
 
 Route::post('/email/verify/code', [AuthController::class, 'verifyEmailCode'])
-    ->middleware('throttle:3,15');
+    ->middleware('throttle:3,15,email-verify');
 
 Route::post('/email/resend-verification', [AuthController::class, 'resendVerification'])
-    ->middleware('throttle:3,15');
+    ->middleware('throttle:3,15,email-resend');
 
 Route::post('/password/reset/code',   [AuthController::class, 'sendPasswordResetCode'])
-    ->middleware('throttle:3,15');
+    ->middleware('throttle:3,15,pwreset-code');
 Route::post('/password/reset/verify', [AuthController::class, 'verifyPasswordResetCode'])
-    ->middleware('throttle:3,15');
+    ->middleware('throttle:3,15,pwreset-verify');
 Route::post('/password/reset',        [AuthController::class, 'resetPassword'])
-    ->middleware('throttle:3,15');
+    ->middleware('throttle:3,15,pwreset');
 
 Route::get('/land', [LandController::class, 'index']);
 
 Route::post('/referrals/validate', [ReferralController::class, 'validateCode'])
-    ->middleware('throttle:20,1');
+    ->middleware('throttle:20,1,referral-validate');
 
 Route::get('/support/faqs', [SupportController::class, 'faqs']);
 
 Route::post('/support/tickets/guest', [SupportController::class, 'storeGuestTicket'])
-    ->middleware('throttle:5,10');
+    ->middleware('throttle:5,10,guest-ticket');
 
 Route::prefix('blog')->group(function () {
     Route::get('/',            [BlogController::class, 'index']);
@@ -105,14 +105,14 @@ Route::prefix('blog')->group(function () {
     Route::get('/{slug}',      [BlogController::class, 'show']);
 });
 
-Route::post('/waitlist',       [WaitlistController::class, 'store'])->middleware('throttle:5,10');
-Route::post('/waitlist/check', [WaitlistController::class, 'check'])->middleware('throttle:10,1');
+Route::post('/waitlist',       [WaitlistController::class, 'store'])->middleware('throttle:5,10,waitlist-store');
+Route::post('/waitlist/check', [WaitlistController::class, 'check'])->middleware('throttle:10,1,waitlist-check');
 
 Route::get('/verify/{verifyToken}', [CertificateController::class, 'verify'])
-    ->middleware('throttle:30,1');
+    ->middleware('throttle:30,1,cert-verify');
 
 Route::get('/marketing/unsubscribe/{token}', MarketingUnsubscribeController::class)
-    ->middleware('throttle:20,1');
+    ->middleware('throttle:20,1,unsubscribe');
 
 // ── Payment webhooks & OPay redirects ─────────────────────────────────────
 // Deliberately NOT included in this file — they're registered once,
@@ -131,10 +131,10 @@ Route::get('/marketing/unsubscribe/{token}', MarketingUnsubscribeController::cla
 Route::middleware(['jwt.custom'])->group(function () {
 
     Route::post('/logout',  [AuthController::class, 'logout']);
-    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:10,1');
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:10,1,refresh');
 
     Route::post('/user/change-password', [AuthController::class, 'changePassword'])
-        ->middleware('throttle:5,15');
+        ->middleware('throttle:5,15,change-password');
 
     Route::middleware(['verified'])->group(function () {
 
@@ -147,12 +147,12 @@ Route::middleware(['jwt.custom'])->group(function () {
             ->middleware(['check.pin', 'audit.log']);
 
         // ── Transaction PIN ───────────────────────────────────────────────────
-        Route::post('/pin/set',    [PinController::class, 'set'])->middleware('throttle:5,15');
-        Route::post('/pin/update', [PinController::class, 'update'])->middleware('throttle:5,15');
+        Route::post('/pin/set',    [PinController::class, 'set'])->middleware('throttle:5,15,pin-set');
+        Route::post('/pin/update', [PinController::class, 'update'])->middleware('throttle:5,15,pin-update');
 
-        Route::post('/pin/forgot',      [PinController::class, 'forgot'])->middleware('throttle:5,15');
-        Route::post('/pin/verify-code', [PinController::class, 'verifyCode'])->middleware('throttle:5,15');
-        Route::post('/pin/reset',       [PinController::class, 'reset'])->middleware('throttle:5,15');
+        Route::post('/pin/forgot',      [PinController::class, 'forgot'])->middleware('throttle:5,15,pin-forgot');
+        Route::post('/pin/verify-code', [PinController::class, 'verifyCode'])->middleware('throttle:5,15,pin-verify-code');
+        Route::post('/pin/reset',       [PinController::class, 'reset'])->middleware('throttle:5,15,pin-reset');
 
         // ── Lands ─────────────────────────────────────────────────────────────
         Route::get('/lands',              [LandController::class, 'indexAuth']);
@@ -162,15 +162,15 @@ Route::middleware(['jwt.custom'])->group(function () {
 
         // ── Deposits ──────────────────────────────────────────────────────────
         Route::post('/deposit', [DepositController::class, 'initiateDeposit'])
-            ->middleware(['idempotent', 'throttle:10,60', 'screening.transact', 'suspended', 'audit.log']);
+            ->middleware(['idempotent', 'throttle:10,60,deposit', 'screening.transact', 'suspended', 'audit.log']);
         Route::get('/deposit/verify/{reference}', [DepositController::class, 'verifyDeposit']);
         Route::get('/paystack/banks',             [DepositController::class, 'banks']);
         Route::post('/paystack/resolve-account',  [DepositController::class, 'resolveAccount'])
-            ->middleware('throttle:20,1');
+            ->middleware('throttle:20,1,resolve-account');
 
         // ── Withdrawals ───────────────────────────────────────────────────────
         Route::post('/withdraw', [WithdrawalController::class, 'requestWithdrawal'])
-            ->middleware(['idempotent', 'throttle:5,60', 'screening.transact', 'suspended', 'check.pin', 'audit.log']);
+            ->middleware(['idempotent', 'throttle:5,60,withdraw', 'screening.transact', 'suspended', 'check.pin', 'audit.log']);
         Route::get('/withdrawals/{reference}', [WithdrawalController::class, 'getWithdrawalStatus']);
 
         // ── Transactions ──────────────────────────────────────────────────────
@@ -190,14 +190,14 @@ Route::middleware(['jwt.custom'])->group(function () {
 
         // ── KYC ───────────────────────────────────────────────────────────────
         Route::get('/kyc/status',          [KycController::class, 'status']);
-        Route::post('/kyc/submit',         [KycController::class, 'submit'])->middleware('throttle:3,60');
+        Route::post('/kyc/submit',         [KycController::class, 'submit'])->middleware('throttle:3,60,kyc-submit');
         Route::get('/kyc/{id}/image/{type}',[KycImageController::class, 'show']);
 
         // ── Referrals ─────────────────────────────────────────────────────────
         Route::get('/referrals/dashboard',           [ReferralController::class, 'dashboard']);
         Route::get('/referrals/rewards',             [ReferralController::class, 'availableRewards']);
         Route::post('/referrals/rewards/{id}/claim', [ReferralController::class, 'claimReward'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:10,1,referral-claim');
 
         // ── Notifications ─────────────────────────────────────────────────────
         Route::get('/notifications',             [NotificationController::class, 'index']);
@@ -207,13 +207,13 @@ Route::middleware(['jwt.custom'])->group(function () {
 
         // ── Support ───────────────────────────────────────────────────────────
         Route::post('/support/chat', [SupportController::class, 'chat'])
-            ->middleware('throttle:20,10');
+            ->middleware('throttle:20,10,support-chat');
         Route::get('/support/tickets',                        [SupportController::class, 'indexTickets']);
         Route::post('/support/tickets',                       [SupportController::class, 'storeTicket'])
-            ->middleware('throttle:5,60');
+            ->middleware('throttle:5,60,support-ticket-store');
         Route::get('/support/tickets/{ticket}',               [SupportController::class, 'showTicket']);
         Route::post('/support/tickets/{ticket}/reply',        [SupportController::class, 'replyTicket'])
-            ->middleware('throttle:20,10');
+            ->middleware('throttle:20,10,support-ticket-reply');
         Route::patch('/support/tickets/{ticket}/close',       [SupportController::class, 'closeTicket']);
 
         Route::prefix('support/live-chat')->group(function () {
@@ -229,24 +229,24 @@ Route::middleware(['jwt.custom'])->group(function () {
         Route::get('/marketplace/my-transactions',[MarketplaceController::class, 'myTransactions']);
         Route::get('/marketplace/{listing}',     [MarketplaceController::class, 'show']);
         Route::post('/marketplace',              [MarketplaceController::class, 'store'])
-            ->middleware('throttle:10,60');
+            ->middleware('throttle:10,60,marketplace-store');
         Route::patch('/marketplace/{listing}',   [MarketplaceController::class, 'update']);
         Route::delete('/marketplace/{listing}',  [MarketplaceController::class, 'destroy']);
         Route::post('/marketplace/{listing}/offers', [MarketplaceController::class, 'makeOffer'])
-            ->middleware(['throttle:10,60', 'screening.transact', 'suspended']);
+            ->middleware(['throttle:10,60,marketplace-offer', 'screening.transact', 'suspended']);
         Route::patch('/marketplace/{listing}/offers/{offer}/accept',   [MarketplaceController::class, 'acceptOffer'])
-            ->middleware(['idempotent', 'throttle:5,1', 'screening.transact', 'suspended', 'check.pin', 'audit.log']);
+            ->middleware(['idempotent', 'throttle:5,1,marketplace-offer-accept', 'screening.transact', 'suspended', 'check.pin', 'audit.log']);
         Route::patch('/marketplace/{listing}/offers/{offer}/reject',   [MarketplaceController::class, 'rejectOffer']);
         Route::patch('/marketplace/{listing}/offers/{offer}/withdraw', [MarketplaceController::class, 'withdrawOffer']);
         Route::get('/marketplace/{listing}/messages',  [MarketplaceController::class, 'messages']);
         Route::post('/marketplace/{listing}/messages', [MarketplaceController::class, 'sendMessage'])
-            ->middleware('throttle:30,1');
+            ->middleware('throttle:30,1,marketplace-message');
 
         // ── Certificates ──────────────────────────────────────────────────────
         Route::get('/certificates',                       [CertificateController::class, 'index']);
         Route::get('/certificates/{certNumber}',          [CertificateController::class, 'show']);
         Route::get('/certificates/{certNumber}/download', [CertificateController::class, 'download'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:10,1,cert-download');
     });
 });
 
@@ -254,7 +254,7 @@ Route::middleware(['jwt.custom'])->group(function () {
 // ADMIN — requires JWT + admin flag
 // =============================================================================
 
-Route::middleware(['jwt.custom', 'admin', 'throttle:60,1', 'audit.log'])->prefix('admin')->group(function () {
+Route::middleware(['jwt.custom', 'admin', 'throttle:60,1,admin-global', 'audit.log'])->prefix('admin')->group(function () {
 
     // ── Users ─────────────────────────────────────────────────────────────────
     Route::get('/users',                       [AdminUserController::class, 'index'])->middleware('permission:users.view');
@@ -294,18 +294,18 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1', 'audit.log'])->prefix
     // ── KYC ───────────────────────────────────────────────────────────────────
     Route::get('/kyc',                   [KycController::class, 'adminIndex'])->middleware('permission:kyc.view');
     Route::get('/kyc/{id}',              [KycController::class, 'adminShow'])->middleware('permission:kyc.view');
-    Route::post('/kyc/{id}/approve',     [KycController::class, 'adminApprove'])->middleware(['throttle:30,1', 'permission:kyc.approve']);
-    Route::post('/kyc/{id}/reject',      [KycController::class, 'adminReject'])->middleware(['throttle:30,1', 'permission:kyc.reject']);
-    Route::post('/kyc/{id}/resubmit',    [KycController::class, 'adminRequestResubmit'])->middleware(['throttle:30,1', 'permission:kyc.reject']);
+    Route::post('/kyc/{id}/approve',     [KycController::class, 'adminApprove'])->middleware(['throttle:30,1,kyc-approve', 'permission:kyc.approve']);
+    Route::post('/kyc/{id}/reject',      [KycController::class, 'adminReject'])->middleware(['throttle:30,1,kyc-reject', 'permission:kyc.reject']);
+    Route::post('/kyc/{id}/resubmit',    [KycController::class, 'adminRequestResubmit'])->middleware(['throttle:30,1,kyc-resubmit', 'permission:kyc.reject']);
 
     // ── Compliance (Sanctions & PEP) ──────────────────────────────────────────
     Route::prefix('compliance')->group(function () {
         Route::get('/stats',                          [ComplianceController::class, 'stats'])->middleware('permission:compliance.view');
         Route::get('/screenings',                     [ComplianceController::class, 'index'])->middleware('permission:compliance.view');
         Route::get('/screenings/{screening}',         [ComplianceController::class, 'show'])->middleware('permission:compliance.view');
-        Route::post('/screenings/{screening}/clear',  [ComplianceController::class, 'clear'])->middleware(['throttle:30,1', 'permission:compliance.clear']);
-        Route::post('/screenings/{screening}/block',  [ComplianceController::class, 'block'])->middleware(['throttle:30,1', 'permission:compliance.block']);
-        Route::post('/users/{user}/rescreen',         [ComplianceController::class, 'rescreen'])->middleware(['throttle:10,1', 'permission:compliance.rescreen']);
+        Route::post('/screenings/{screening}/clear',  [ComplianceController::class, 'clear'])->middleware(['throttle:30,1,compliance-clear', 'permission:compliance.clear']);
+        Route::post('/screenings/{screening}/block',  [ComplianceController::class, 'block'])->middleware(['throttle:30,1,compliance-block', 'permission:compliance.block']);
+        Route::post('/users/{user}/rescreen',         [ComplianceController::class, 'rescreen'])->middleware(['throttle:10,1,compliance-rescreen', 'permission:compliance.rescreen']);
     });
 
     // ── Support ───────────────────────────────────────────────────────────────
@@ -353,9 +353,9 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1', 'audit.log'])->prefix
     Route::prefix('withdrawals')->group(function () {
         Route::get('/', [WithdrawalController::class, 'adminIndex'])->middleware('permission:withdrawals.view');
 
-        Route::post('/approve-all',    [WithdrawalController::class, 'adminApproveAll'])->middleware(['throttle:5,1', 'permission:withdrawals.approve']);
-        Route::post('/{id}/approve',   [WithdrawalController::class, 'adminApprove'])->middleware(['throttle:30,1', 'permission:withdrawals.approve']);
-        Route::post('/{id}/reject',    [WithdrawalController::class, 'adminReject'])->middleware(['throttle:30,1', 'permission:withdrawals.reject']);
+        Route::post('/approve-all',    [WithdrawalController::class, 'adminApproveAll'])->middleware(['throttle:5,1,withdrawals-approve-all', 'permission:withdrawals.approve']);
+        Route::post('/{id}/approve',   [WithdrawalController::class, 'adminApprove'])->middleware(['throttle:30,1,withdrawals-approve', 'permission:withdrawals.approve']);
+        Route::post('/{id}/reject',    [WithdrawalController::class, 'adminReject'])->middleware(['throttle:30,1,withdrawals-reject', 'permission:withdrawals.reject']);
     });
 
     // ── Referrals ─────────────────────────────────────────────────────────────
