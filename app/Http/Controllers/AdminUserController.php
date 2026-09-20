@@ -78,7 +78,7 @@ class AdminUserController extends Controller
     {
         $user->load([
             'kycVerification',
-            'userLands.land:id,name,price_per_unit',
+            'userLands.land:id,title,price_per_unit',
             'recentTransactions', 
         ]);
 
