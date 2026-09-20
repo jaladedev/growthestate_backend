@@ -65,15 +65,31 @@ class MailCampaignController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'                    => 'required|string|max:150',
-            'subject'                 => 'required|string|max:200',
-            'body_html'               => 'required|string',
-            'audience_filter'         => 'required|array',
-            'audience_filter.segment' => 'required|in:all,verified_no_purchase,custom',
-            'audience_filter.user_ids'   => 'required_if:audience_filter.segment,custom|array',
-            'audience_filter.user_ids.*' => 'integer|exists:users,id',
-            'scheduled_at'            => 'sometimes|nullable|date|after:now',
+            'name'                        => 'required|string|max:150',
+            'subject'                     => 'required|string|max:200',
+            'body_html'                   => 'required|string',
+            'audience_filter'             => 'required|array',
+            'audience_filter.segment'     => 'required|in:all,verified_no_purchase,custom',
+            'audience_filter.user_ids'    => 'sometimes|array',
+            'audience_filter.user_ids.*'  => 'integer|exists:users,id',
+            // Manually-typed recipients not tied to an existing account —
+            // only meaningful for 'custom'. Deduped against user_ids'
+            // resolved emails in MarketingCampaignService::createCampaign().
+            'audience_filter.emails'      => 'sometimes|array',
+            'audience_filter.emails.*'    => 'email:rfc',
+            'scheduled_at'                => 'sometimes|nullable|date|after:now',
         ]);
+
+        if (($data['audience_filter']['segment'] ?? null) === 'custom') {
+            $hasUserIds = ! empty($data['audience_filter']['user_ids'] ?? []);
+            $hasEmails  = ! empty($data['audience_filter']['emails'] ?? []);
+            if (! $hasUserIds && ! $hasEmails) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pick at least one user or add at least one email for a custom campaign.',
+                ], 422);
+            }
+        }
 
         $campaign = $this->campaigns->createCampaign($data, $request->user());
 

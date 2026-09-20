@@ -80,6 +80,30 @@ class MarketingCampaignService
                     'updated_at'         => $now,
                 ]);
 
+            // Manually-typed emails not tied to an existing user account —
+            // only present for the 'custom' segment. Deduped (case-insensitive)
+            // against the resolved users above so picking a user AND typing
+            // their same address by hand doesn't create two recipient rows.
+            // user_id stays null; the (mail_campaign_id, user_id) unique
+            // index treats NULLs as distinct, so multiple such rows are fine.
+            $existingEmails = $rows->pluck('email')->map(fn ($e) => strtolower($e))->all();
+            $extraRows = collect($data['audience_filter']['emails'] ?? [])
+                ->map(fn ($e) => strtolower(trim($e)))
+                ->filter()
+                ->unique()
+                ->reject(fn ($e) => in_array($e, $existingEmails, true))
+                ->map(fn ($email) => [
+                    'mail_campaign_id'   => $campaign->id,
+                    'user_id'            => null,
+                    'email'              => $email,
+                    'status'             => 'pending',
+                    'unsubscribe_token'  => Str::random(48),
+                    'created_at'         => $now,
+                    'updated_at'         => $now,
+                ]);
+
+            $rows = $rows->concat($extraRows);
+
             foreach ($rows->chunk(500) as $chunk) {
                 MailCampaignRecipient::insert($chunk->all());
             }

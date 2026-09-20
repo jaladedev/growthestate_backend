@@ -36,24 +36,32 @@ class SendMarketingEmailJob implements ShouldQueue
 
         $user = $this->recipient->user;
 
-        // Re-check eligibility at send time, not just at audience-snapshot
-        // time — the user may have opted out, been suspended, or been
-        // deleted in the time since the campaign was created.
-        if ($user && ($user->marketing_opted_out_at || $user->is_suspended || ! $user->email_verified_at)) {
-            $this->recipient->update([
-                'status'      => 'skipped',
-                'skip_reason' => $user->marketing_opted_out_at ? 'opted_out' : ($user->is_suspended ? 'suspended' : 'unverified'),
-            ]);
-            $this->campaign->increment('skipped_count');
-            $campaigns->finalizeIfDone($this->campaign->fresh());
-            return;
-        }
+        // Manually-added recipients (no user_id at all — see
+        // MarketingCampaignService::createCampaign's extra 'emails' entries)
+        // were never tied to an account by design, so there's no opt-out/
+        // suspension/verification state to re-check — send straight through.
+        // Only a recipient that HAD a user_id whose account is now gone
+        // counts as 'user_deleted'.
+        if ($this->recipient->user_id !== null) {
+            // Re-check eligibility at send time, not just at audience-snapshot
+            // time — the user may have opted out, been suspended, or been
+            // deleted in the time since the campaign was created.
+            if ($user && ($user->marketing_opted_out_at || $user->is_suspended || ! $user->email_verified_at)) {
+                $this->recipient->update([
+                    'status'      => 'skipped',
+                    'skip_reason' => $user->marketing_opted_out_at ? 'opted_out' : ($user->is_suspended ? 'suspended' : 'unverified'),
+                ]);
+                $this->campaign->increment('skipped_count');
+                $campaigns->finalizeIfDone($this->campaign->fresh());
+                return;
+            }
 
-        if (! $user) {
-            $this->recipient->update(['status' => 'skipped', 'skip_reason' => 'user_deleted']);
-            $this->campaign->increment('skipped_count');
-            $campaigns->finalizeIfDone($this->campaign->fresh());
-            return;
+            if (! $user) {
+                $this->recipient->update(['status' => 'skipped', 'skip_reason' => 'user_deleted']);
+                $this->campaign->increment('skipped_count');
+                $campaigns->finalizeIfDone($this->campaign->fresh());
+                return;
+            }
         }
 
         try {
