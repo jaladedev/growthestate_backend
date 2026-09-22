@@ -48,12 +48,13 @@ class TransactionController extends Controller
             ->get();
 
         $data = $rows->map(fn ($r) => [
-            'type'   => ucfirst($r->type),
-            'land'   => $r->land,
-            'units'  => $r->units,
-            'amount' => ($r->amount_kobo ?? 0) / 100,
-            'date'   => $r->date ? Carbon::parse($r->date)->toISOString() : null,
-            'status' => ucfirst($r->status),
+            'type'      => ucfirst($r->type),
+            'land'      => $r->land,
+            'units'     => $r->units,
+            'amount'    => ($r->amount_kobo ?? 0) / 100,
+            'date'      => $r->date ? Carbon::parse($r->date)->toISOString() : null,
+            'status'    => ucfirst($r->status),
+            'reference' => $r->reference,
         ]);
 
         return response()->json([
@@ -88,6 +89,7 @@ class TransactionController extends Controller
                 't.amount_kobo',
                 't.transaction_date as date',
                 DB::raw("COALESCE(t.status, 'completed') as status"),
+                DB::raw('NULL as reference'),
             ]);
 
         $deposits = DB::table('deposits as d')
@@ -100,6 +102,7 @@ class TransactionController extends Controller
                 'd.amount_kobo',
                 'd.created_at as date',
                 DB::raw("COALESCE(d.status, 'pending') as status"),
+                'd.reference',
             ]);
 
         $withdrawals = DB::table('withdrawals as w')
@@ -112,6 +115,7 @@ class TransactionController extends Controller
                 'w.amount_kobo',
                 'w.created_at as date',
                 DB::raw("COALESCE(w.status, 'pending') as status"),
+                'w.reference',
             ]);
 
         return $transactions->unionAll($deposits)->unionAll($withdrawals);
