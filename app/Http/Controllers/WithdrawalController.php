@@ -347,6 +347,90 @@ class WithdrawalController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // ADMIN: MARK A WITHDRAWAL AS MANUALLY TRANSFERRED
+    // POST /api/admin/withdrawals/{id}/manual-complete
+    //
+    // For withdrawals where Paystack couldn't complete the payout (or where
+    // an admin sent the money by direct bank transfer instead of retrying
+    // Paystack) but the funds have genuinely reached the user — most often
+    // a 'failed' row where the admin confirmed on the Paystack/bank dashboard
+    // that the transfer actually went through despite the exception we
+    // caught in adminApprove(). Also covers 'pending' rows an admin chooses
+    // to settle by manual transfer instead of routing through Paystack at
+    // all, and 'processing' rows stuck mid-flight (e.g. server crashed
+    // between initiating the transfer and receiving the webhook).
+    //
+    // This does NOT call Paystack — it only records that settlement
+    // happened outside the automated flow, and requires the admin to give
+    // the manual transfer's reference for the audit trail. It reuses the same ledger
+    // idempotency key as the Paystack webhook path, so if the webhook later
+    // also arrives for this reference, its ledger post is a no-op (unique
+    // index on ledger_entries(reference, type)) and its status update is a
+    // no-op too, since processed_at is already set.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function adminMarkManualTransfer(Request $request, int $id)
+    {
+        $request->validate([
+            'reference' => 'required|string|max:500', // bank transfer ref / Paystack txn ID used as proof of manual settlement
+        ]);
+
+        $admin = $request->user();
+
+        DB::transaction(function () use ($id, $admin, $request) {
+            $withdrawal = Withdrawal::lockForUpdate()->findOrFail($id);
+
+            if (! in_array($withdrawal->status, ['pending', 'processing', 'failed'], true)) {
+                abort(422, "Only pending, processing, or failed withdrawals can be marked as manually transferred. Current status: {$withdrawal->status}.");
+            }
+
+            $previousStatus = $withdrawal->status;
+
+            $withdrawal->update([
+                'status'       => 'completed',
+                'reviewed_by'  => $admin->id,
+                'reviewed_at'  => now(),
+                'processed_at' => now(),
+            ]);
+
+            LedgerService::postWithdrawalCompleted(
+                amountKobo: (int) $withdrawal->amount_kobo,
+                reference:  $withdrawal->reference,
+            );
+
+            \App\Models\AdminActionLog::record(
+                $admin,
+                'withdrawal.manual_complete',
+                'Withdrawal',
+                $withdrawal->id,
+                ['amount_kobo' => $withdrawal->amount_kobo, 'manual_transfer_reference' => $request->reference, 'previous_status' => $previousStatus],
+                $request->ip()
+            );
+
+            Log::info('Withdrawal marked as manually transferred by admin', [
+                'withdrawal_id'  => $withdrawal->id,
+                'reference'      => $withdrawal->reference,
+                'marked_by'      => $admin->id,
+                'manual_ref'     => $request->reference,
+            ]);
+
+            try {
+                $withdrawal->user->notify(new WithdrawalConfirmed($withdrawal));
+            } catch (\Exception $e) {
+                Log::warning('WithdrawalConfirmed notification failed (manual transfer)', [
+                    'withdrawal_id' => $withdrawal->id,
+                    'error'         => $e->getMessage(),
+                ]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Withdrawal marked as completed via manual transfer.',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // ADMIN: BATCH APPROVE ALL PENDING WITHDRAWALS
     // POST /api/admin/withdrawals/approve-all
     // ─────────────────────────────────────────────────────────────────────────

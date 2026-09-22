@@ -356,6 +356,7 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1,admin-global', 'audit.l
         Route::post('/approve-all',    [WithdrawalController::class, 'adminApproveAll'])->middleware(['throttle:5,1,withdrawals-approve-all', 'permission:withdrawals.approve']);
         Route::post('/{id}/approve',   [WithdrawalController::class, 'adminApprove'])->middleware(['throttle:30,1,withdrawals-approve', 'permission:withdrawals.approve']);
         Route::post('/{id}/reject',    [WithdrawalController::class, 'adminReject'])->middleware(['throttle:30,1,withdrawals-reject', 'permission:withdrawals.reject']);
+        Route::post('/{id}/manual-complete', [WithdrawalController::class, 'adminMarkManualTransfer'])->middleware(['throttle:30,1,withdrawals-manual-complete', 'permission:withdrawals.manual_complete']);
     });
 
     // ── Referrals ─────────────────────────────────────────────────────────────
