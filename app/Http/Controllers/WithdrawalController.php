@@ -202,6 +202,76 @@ class WithdrawalController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // USER: CANCEL WITHDRAWAL REQUEST
+    // POST /api/withdrawals/{reference}/cancel
+    //
+    // Lets a user pull back their own withdrawal request while it's still
+    // 'pending' (i.e. before an admin has approved it and a Paystack
+    // transfer has been attempted). Refunds the held balance and restores
+    // the daily withdrawal limit, same as an admin rejection, but records
+    // it as 'cancelled' — a distinct status from 'rejected' — so reporting
+    // can tell "admin declined this" apart from "user changed their mind".
+    // Admins are pinged on Telegram (reusing the existing telegram log
+    // channel) since a cancellation can matter for reconciliation if an
+    // approval was already in flight in another tab.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function cancelWithdrawal(Request $request, string $reference)
+    {
+        $user = $request->user();
+
+        DB::transaction(function () use ($user, $reference) {
+            $withdrawal = Withdrawal::where('reference', $reference)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($withdrawal->status !== 'pending') {
+                abort(422, "Only pending withdrawals can be cancelled. Current status: {$withdrawal->status}.");
+            }
+
+            $lockedUser = \App\Models\User::lockForUpdate()->find($user->id);
+            $lockedUser->increment('balance_kobo', $withdrawal->amount_kobo);
+
+            $withdrawalDay = $withdrawal->created_at->toDateString();
+            if ($lockedUser->withdrawal_day === $withdrawalDay) {
+                DB::table('users')
+                    ->where('id', $lockedUser->id)
+                    ->update([
+                        'withdrawal_daily_total_kobo' => DB::raw(
+                            "GREATEST(0, withdrawal_daily_total_kobo - {$withdrawal->amount_kobo})"
+                        ),
+                    ]);
+            }
+
+            LedgerService::postWithdrawalReversal(
+                user:       $lockedUser->fresh(),
+                amountKobo: (int) $withdrawal->amount_kobo,
+                reference:  $withdrawal->reference,
+                reason:     'Cancelled by user',
+            );
+
+            $withdrawal->update([
+                'status'       => 'cancelled',
+                'reviewed_at'  => now(),
+                'processed_at' => now(), // blocks a late Paystack webhook / retry for this reference
+            ]);
+
+            Log::channel('telegram')->warning('Withdrawal cancelled by user', [
+                'withdrawal_id' => $withdrawal->id,
+                'reference'     => $withdrawal->reference,
+                'user_id'       => $user->id,
+                'user_email'    => $user->email,
+                'amount_kobo'   => $withdrawal->amount_kobo,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Withdrawal request cancelled and funds returned to your balance.',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // ADMIN: LIST PENDING WITHDRAWALS
     // GET /api/admin/withdrawals
     // ─────────────────────────────────────────────────────────────────────────

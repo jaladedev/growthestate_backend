@@ -172,6 +172,7 @@ Route::middleware(['jwt.custom'])->group(function () {
         Route::post('/withdraw', [WithdrawalController::class, 'requestWithdrawal'])
             ->middleware(['idempotent', 'throttle:5,60,withdraw', 'screening.transact', 'suspended', 'check.pin', 'audit.log']);
         Route::get('/withdrawals/{reference}', [WithdrawalController::class, 'getWithdrawalStatus']);
+        Route::post('/withdrawals/{reference}/cancel', [WithdrawalController::class, 'cancelWithdrawal'])->middleware('throttle:20,1,withdrawals-cancel');
 
         // ── Transactions ──────────────────────────────────────────────────────
         Route::get('/transactions/user',      [TransactionController::class, 'userTransactions']);
