@@ -12,10 +12,16 @@ class MarketingMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    /**
+     * Deliberately protected, NOT public. Mailable::buildViewData() merges
+     * every public property into the view data AFTER ->with(), so a public
+     * $bodyHtml silently overwrites the personalized 'bodyHtml' passed in
+     * build() and the raw {{first_name}} placeholder ships to the inbox.
+     */
     public function __construct(
-        public string $subjectLine,
-        public string $bodyHtml,
-        public MailCampaignRecipient $recipient,
+        protected string $subjectLine,
+        protected string $bodyHtml,
+        protected MailCampaignRecipient $recipient,
     ) {}
 
     public function build()
