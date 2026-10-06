@@ -12,10 +12,19 @@ class MarketingMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    /**
+     * Deliberately protected, NOT public. Mailable::buildViewData() merges
+     * every public property into the view data AFTER ->with(), so a public
+     * $bodyHtml silently overwrites the personalized 'bodyHtml' passed in
+     * build() and the raw {{first_name}} placeholder ships to the inbox.
+     * This was the actual root cause of the placeholder bug — every other
+     * part of the pipeline (regex, deploy, DB content) was already correct;
+     * this one property visibility clobbered the result at the last step.
+     */
     public function __construct(
-        public string $subjectLine,
-        public string $bodyHtml,
-        public MailCampaignRecipient $recipient,
+        protected string $subjectLine,
+        protected string $bodyHtml,
+        protected MailCampaignRecipient $recipient,
     ) {}
 
     public function build()
