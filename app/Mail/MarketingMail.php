@@ -12,27 +12,28 @@ class MarketingMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /**
-     * Deliberately protected, NOT public. Mailable::buildViewData() merges
-     * every public property into the view data AFTER ->with(), so a public
-     * $bodyHtml silently overwrites the personalized 'bodyHtml' passed in
-     * build() and the raw {{first_name}} placeholder ships to the inbox.
-     */
     public function __construct(
-        protected string $subjectLine,
-        protected string $bodyHtml,
-        protected MailCampaignRecipient $recipient,
+        public string $subjectLine,
+        public string $bodyHtml,
+        public MailCampaignRecipient $recipient,
     ) {}
 
     public function build()
     {
+        $personalizedHtml = $this->personalize($this->bodyHtml);
+        $unsubscribeUrl   = url("/api/marketing/unsubscribe/{$this->recipient->unsubscribe_token}");
+        $supportEmail     = config('mail.to.address', 'support@reu.ng');
+
         return $this->subject($this->subjectLine)
             ->replyTo(config('mail.reply_to.address'), config('mail.reply_to.name'))
             ->view('emails.marketing')
+            ->text('emails.marketing-text')
             ->with([
-                'bodyHtml'        => $this->personalize($this->bodyHtml),
+                'bodyHtml'        => $personalizedHtml,
+                'bodyText'        => $this->htmlToPlainText($personalizedHtml),
                 'logoUrl'         => asset('images/reu-logo.png'),
-                'unsubscribeUrl'  => url("/api/marketing/unsubscribe/{$this->recipient->unsubscribe_token}"),
+                'unsubscribeUrl'  => $unsubscribeUrl,
+                'supportEmail'    => $supportEmail,
             ]);
     }
 
@@ -60,5 +61,34 @@ class MarketingMail extends Mailable
         $html = preg_replace('/\{\{\s*name\s*\}\}/i', $fullName !== '' ? $fullName : 'Investor', $html);
 
         return $html;
+    }
+
+    /**
+     * Derives the text/plain alternative part from the (already
+     * personalized) HTML body. A multipart message with a real text/plain
+     * part, not just HTML, is one of the signals Gmail's classifier weighs
+     * toward Primary instead of Promotions — see emails/marketing-text
+     * and the ->text() call in build() above.
+     *
+     * Links are special-cased to "label (url)" before tags are stripped,
+     * since plain strip_tags() would silently drop the href and leave only
+     * the anchor text — losing the WhatsApp channel link entirely, for
+     * example.
+     */
+    private function htmlToPlainText(string $html): string
+    {
+        $text = preg_replace_callback(
+            '/<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is',
+            fn ($m) => trim(strip_tags($m[2])) . ' (' . $m[1] . ')',
+            $html
+        );
+
+        $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
+        $text = preg_replace('/<\/p>/i', "\n\n", $text);
+        $text = strip_tags($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5);
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+
+        return trim($text);
     }
 }

@@ -109,16 +109,18 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'no-reply@reu.ng'),
+        'address' => env('MAIL_FROM_ADDRESS', 'info@reu.ng'),
         'name' => env('MAIL_FROM_NAME', 'REU.ng'),
     ],
 
-    // Kept separate from 'from' on purpose: mail sends FROM no-reply@reu.ng
-    // (keeps automated/bulk sending isolated from the support inbox for
-    // deliverability/reputation reasons), but customer-facing emails often
+    // Kept separate from 'from' on purpose: mail sends FROM info@reu.ng
+    // (moved off no-reply@ since that address pattern is one of the
+    // stronger signals Gmail's classifier uses to sort mail into
+    // Promotions instead of Primary), but customer-facing emails often
     // say "reply to this email" — that reply needs to land somewhere a
-    // person actually reads. Applied per-Mailable via ->replyTo(...), see
-    // App\Mail\MarketingMail and friends.
+    // person actually reads, separate from the general info@ inbox.
+    // Applied per-Mailable via ->replyTo(...), see App\Mail\MarketingMail
+    // and friends.
     'reply_to' => [
         'address' => env('MAIL_REPLY_TO_ADDRESS', 'support@reu.ng'),
         'name' => env('MAIL_REPLY_TO_NAME', 'REU.ng Support'),
