@@ -16,6 +16,7 @@ use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\AdminUserController;
+use App\Http\Controllers\AdminUnitGiftController;
 use App\Http\Controllers\AdminRoleController;
 use App\Http\Controllers\AdminSupportController;
 use App\Http\Controllers\MarketplaceController;
@@ -265,6 +266,7 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1,admin-global', 'audit.l
     Route::patch('/users/{user}/make-admin',   [AdminUserController::class, 'makeAdmin'])->middleware('permission:roles.manage');
     Route::patch('/users/{user}/remove-admin', [AdminUserController::class, 'removeAdmin'])->middleware('permission:roles.manage');
     Route::delete('/users/{user}',             [AdminUserController::class, 'destroy'])->middleware('permission:users.delete');
+    Route::post('/users/{user}/gift-units',    [AdminUnitGiftController::class, 'store'])->middleware(['idempotent', 'throttle:20,1,admin-gift-units', 'permission:units.gift']);
 
     // ── Roles ─────────────────────────────────────────────────────────────────
     // ── Marketing / bulk mail campaigns ─────────────────────────────────────

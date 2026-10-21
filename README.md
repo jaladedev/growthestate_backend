@@ -420,6 +420,20 @@ All admin routes require `is_admin = true`. Prefix: `/admin`.
 | PATCH | `/admin/users/{user}/make-admin` | Grant admin |
 | PATCH | `/admin/users/{user}/remove-admin` | Revoke admin |
 | DELETE | `/admin/users/{user}` | Delete user |
+| POST | `/admin/users/{user}/gift-units` | Gift land units to a user from platform inventory (requires `units.gift`, super_admin only) |
+
+**Gift units** — `POST /admin/users/{user}/gift-units`
+
+```json
+{ "land_id": 12, "units": 5, "reason": "Welcome gift" }
+```
+
+Units are taken from the land's unsold inventory (`available_units`) and credited to the user. No wallet
+or rewards balance moves and no ledger entry is posted. The gift is recorded as a `gift` transaction
+(amount 0), added to the user's holding with a cost basis of 0, logged in `admin_action_logs`
+(`units.gift`), and the user's certificate is issued/refreshed. Rejected with 422 if the land lacks
+enough available units, or the recipient is suspended, admin, or not screening-clear. Supports the
+`Idempotency-Key` header.
 
 **Lands**
 

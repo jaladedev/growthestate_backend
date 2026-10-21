@@ -49,6 +49,12 @@ class SendPurchaseNotification implements ShouldQueue
                 return;
             }
 
+            // Admin gifts reuse LandUnitsPurchased for cache/portfolio updates,
+            // but the recipient gets the dedicated UnitsGifted notification instead.
+            if ($transaction->type === 'gift') {
+                return;
+            }
+
             $user->notify(new PurchaseConfirmed($transaction));
 
         } catch (\Throwable $e) {
