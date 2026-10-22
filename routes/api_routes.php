@@ -267,6 +267,8 @@ Route::middleware(['jwt.custom', 'admin', 'throttle:60,1,admin-global', 'audit.l
     Route::patch('/users/{user}/remove-admin', [AdminUserController::class, 'removeAdmin'])->middleware('permission:roles.manage');
     Route::delete('/users/{user}',             [AdminUserController::class, 'destroy'])->middleware('permission:users.delete');
     Route::post('/users/{user}/gift-units',    [AdminUnitGiftController::class, 'store'])->middleware(['idempotent', 'throttle:20,1,admin-gift-units', 'permission:units.gift']);
+    Route::get('/users/{user}/gifts',          [AdminUnitGiftController::class, 'index'])->middleware('permission:units.gift');
+    Route::post('/users/{user}/gifts/{reference}/reverse', [AdminUnitGiftController::class, 'reverse'])->middleware(['idempotent', 'throttle:20,1,admin-gift-units', 'permission:units.gift']);
 
     // ── Roles ─────────────────────────────────────────────────────────────────
     // ── Marketing / bulk mail campaigns ─────────────────────────────────────

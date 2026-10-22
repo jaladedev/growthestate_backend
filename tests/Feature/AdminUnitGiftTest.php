@@ -213,3 +213,200 @@ describe('Admin unit gifting', function () {
             ->assertStatus(403);
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reversal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function giftIt($test, User $admin, User $recipient, int $landId, int $units): string
+{
+    return $test->actingAs($admin, 'api')
+        ->postJson("/api/admin/users/{$recipient->id}/gift-units", [
+            'land_id' => $landId, 'units' => $units, 'reason' => 'Setup gift',
+        ])
+        ->assertStatus(201)
+        ->json('data.reference');
+}
+
+function giftReverse($test, User $admin, User $recipient, string $ref, string $reason = 'Issued in error')
+{
+    return $test->actingAs($admin, 'api')
+        ->postJson("/api/admin/users/{$recipient->id}/gifts/{$ref}/reverse", ['reason' => $reason]);
+}
+
+describe('Admin gift reversal', function () {
+
+    it('returns the units to inventory and removes the holding', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient(['balance_kobo' => 500]);
+        $landId    = giftLand(100);
+
+        $ref = giftIt($this, $admin, $recipient, $landId, 5);
+
+        giftReverse($this, $admin, $recipient, $ref)
+            ->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.units', 5)
+            ->assertJsonPath('data.remaining_units', 100);
+
+        $this->assertDatabaseHas('lands', ['id' => $landId, 'available_units' => 100]);
+        $this->assertDatabaseMissing('user_land', ['user_id' => $recipient->id, 'land_id' => $landId]);
+        $this->assertDatabaseHas('purchases', [
+            'user_id' => $recipient->id, 'land_id' => $landId, 'units' => 0, 'status' => 'reversed',
+        ]);
+        $this->assertDatabaseHas('transactions', [
+            'user_id'   => $recipient->id,
+            'type'      => 'gift_reversal',
+            'reference' => 'REV-' . $ref,
+            'units'     => 5,
+        ]);
+        $this->assertDatabaseHas('admin_action_logs', ['admin_id' => $admin->id, 'action' => 'units.gift_reverse']);
+        $this->assertDatabaseHas('users', ['id' => $recipient->id, 'balance_kobo' => 500]);
+    });
+
+    it('reverses only the gifted quantity when the user holds more', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $landId    = giftLand(100);
+
+        $first = giftIt($this, $admin, $recipient, $landId, 5);
+        giftIt($this, $admin, $recipient, $landId, 3);
+
+        giftReverse($this, $admin, $recipient, $first)->assertStatus(200);
+
+        $this->assertDatabaseHas('user_land', ['user_id' => $recipient->id, 'land_id' => $landId, 'units' => 3]);
+        $this->assertDatabaseHas('purchases', ['user_id' => $recipient->id, 'units' => 3, 'status' => 'active']);
+        $this->assertDatabaseHas('lands', ['id' => $landId, 'available_units' => 97]);
+    });
+
+    it('refuses to reverse the same gift twice', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $landId    = giftLand(100);
+        $ref       = giftIt($this, $admin, $recipient, $landId, 5);
+
+        giftReverse($this, $admin, $recipient, $ref)->assertStatus(200);
+
+        giftReverse($this, $admin, $recipient, $ref)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('reference');
+
+        $this->assertDatabaseHas('lands', ['id' => $landId, 'available_units' => 100]);
+    });
+
+    it('refuses when the user no longer holds the full gifted quantity', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $landId    = giftLand(100);
+        $ref       = giftIt($this, $admin, $recipient, $landId, 5);
+
+        // Simulate the user having sold 3 units since.
+        DB::table('user_land')->where('user_id', $recipient->id)->update(['units' => 2]);
+
+        giftReverse($this, $admin, $recipient, $ref)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('units');
+
+        $this->assertDatabaseHas('user_land', ['user_id' => $recipient->id, 'units' => 2]);
+        $this->assertDatabaseHas('lands', ['id' => $landId, 'available_units' => 95]);
+        $this->assertDatabaseMissing('transactions', ['reference' => 'REV-' . $ref]);
+    });
+
+    it('refuses when the gifted units are listed on the marketplace', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $landId    = giftLand(100);
+        $ref       = giftIt($this, $admin, $recipient, $landId, 5);
+
+        DB::table('marketplace_listings')->insert([
+            'seller_id'         => $recipient->id,
+            'land_id'           => $landId,
+            'units_for_sale'    => 4,
+            'asking_price_kobo' => 100_000,
+            'status'            => 'active',
+            'created_at'        => now(),
+            'updated_at'        => now(),
+        ]);
+
+        giftReverse($this, $admin, $recipient, $ref)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('units');
+
+        $this->assertDatabaseHas('user_land', ['user_id' => $recipient->id, 'units' => 5]);
+    });
+
+    it('404-style rejects an unknown reference and another user\'s gift', function () {
+        Notification::fake();
+
+        $admin = giftSuperAdmin();
+        $a     = giftRecipient();
+        $b     = giftRecipient();
+        $landId = giftLand(100);
+        $ref   = giftIt($this, $admin, $a, $landId, 2);
+
+        giftReverse($this, $admin, $a, 'GFT-does-not-exist')->assertStatus(422)->assertJsonValidationErrors('reference');
+        giftReverse($this, $admin, $b, $ref)->assertStatus(422)->assertJsonValidationErrors('reference');
+
+        $this->assertDatabaseHas('user_land', ['user_id' => $a->id, 'units' => 2]);
+    });
+
+    it('requires a reason', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $ref       = giftIt($this, $admin, $recipient, giftLand(10), 1);
+
+        $this->actingAs($admin, 'api')
+            ->postJson("/api/admin/users/{$recipient->id}/gifts/{$ref}/reverse", [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('reason');
+    });
+
+    it('lists a user\'s gifts and flags the reversed ones', function () {
+        Notification::fake();
+
+        $admin     = giftSuperAdmin();
+        $recipient = giftRecipient();
+        $landId    = giftLand(100);
+
+        $keep     = giftIt($this, $admin, $recipient, $landId, 2);
+        $reversed = giftIt($this, $admin, $recipient, $landId, 3);
+        giftReverse($this, $admin, $recipient, $reversed)->assertStatus(200);
+
+        $rows = collect(
+            $this->actingAs($admin, 'api')
+                ->getJson("/api/admin/users/{$recipient->id}/gifts")
+                ->assertStatus(200)
+                ->json('data')
+        )->keyBy('reference');
+
+        expect($rows)->toHaveCount(2);
+        expect($rows[$keep]['reversed'])->toBeFalse();
+        expect($rows[$reversed]['reversed'])->toBeTrue();
+        expect($rows[$keep]['land_title'])->toBe('Gift Plot');
+    });
+
+    it('forbids staff without units.gift from listing or reversing', function () {
+        $officer = User::factory()->create(['email_verified_at' => now(), 'is_admin' => false]);
+        $officer->roles()->attach(Role::where('name', 'finance_officer')->firstOrFail()->id, ['assigned_at' => now()]);
+        $recipient = giftRecipient();
+
+        $this->actingAs($officer, 'api')
+            ->getJson("/api/admin/users/{$recipient->id}/gifts")->assertStatus(403);
+
+        $this->actingAs($officer, 'api')
+            ->postJson("/api/admin/users/{$recipient->id}/gifts/GFT-x/reverse", ['reason' => 'Not allowed'])
+            ->assertStatus(403);
+    });
+});

@@ -421,6 +421,8 @@ All admin routes require `is_admin = true`. Prefix: `/admin`.
 | PATCH | `/admin/users/{user}/remove-admin` | Revoke admin |
 | DELETE | `/admin/users/{user}` | Delete user |
 | POST | `/admin/users/{user}/gift-units` | Gift land units to a user from platform inventory (requires `units.gift`, super_admin only) |
+| GET | `/admin/users/{user}/gifts` | List a user's gifts (newest first, max 50) with a `reversed` flag (requires `units.gift`) |
+| POST | `/admin/users/{user}/gifts/{reference}/reverse` | Reverse a gift: return its units to platform inventory (requires `units.gift`) |
 
 **Gift units** — `POST /admin/users/{user}/gift-units`
 
@@ -434,6 +436,16 @@ or rewards balance moves and no ledger entry is posted. The gift is recorded as 
 (`units.gift`), and the user's certificate is issued/refreshed. Rejected with 422 if the land lacks
 enough available units, or the recipient is suspended, admin, or not screening-clear. Supports the
 `Idempotency-Key` header.
+
+**Reverse a gift** — `POST /admin/users/{user}/gifts/{reference}/reverse` with `{ "reason": "Issued in error" }`
+
+Takes the gifted units back out of the user's holding and returns them to the land's `available_units`.
+All-or-nothing: refused with 422 if the user no longer holds the full quantity (sold or moved some),
+if the units are listed on the marketplace, or if the gift was already reversed. Recorded as a
+`gift_reversal` transaction with reference `REV-<gift reference>` (unique, so a gift can be reversed at
+most once), plus an `admin_action_logs` entry (`units.gift_reverse`). The certificate is refreshed (or
+revoked if the holding reaches zero) and the user is notified. Portfolio snapshots are not adjusted,
+consistent with how marketplace sales behave today.
 
 **Lands**
 

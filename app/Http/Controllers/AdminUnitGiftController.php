@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Events\LandUnitsPurchased;
+use App\Listeners\ClearLandCache;
 use App\Models\AdminActionLog;
 use App\Models\Land;
+use App\Models\MarketplaceListing;
 use App\Models\Purchase;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\UnitsGifted;
+use App\Notifications\UnitsGiftReversed;
 use App\Services\CertificateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -209,6 +212,233 @@ class AdminUnitGiftController extends Controller
                 ] : null,
             ],
         ], 201);
+    }
+
+    /**
+     * GET /admin/users/{user}/gifts — the user's gifts, newest first, each
+     * flagged with whether it has already been reversed.
+     */
+    public function index(User $user)
+    {
+        $gifts = Transaction::with('land:id,title')
+            ->where('user_id', $user->id)
+            ->where('type', 'gift')
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get();
+
+        $reversedRefs = Transaction::where('user_id', $user->id)
+            ->where('type', 'gift_reversal')
+            ->whereIn('reference', $gifts->map(fn ($g) => 'REV-' . $g->reference))
+            ->pluck('reference')
+            ->flip();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $gifts->map(fn ($g) => [
+                'reference'  => $g->reference,
+                'land_id'    => $g->land_id,
+                'land_title' => $g->land?->title,
+                'units'      => $g->units,
+                'reason'     => $g->message,
+                'gifted_at'  => $g->transaction_date,
+                'reversed'   => $reversedRefs->has('REV-' . $g->reference),
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * POST /admin/users/{user}/gifts/{reference}/reverse
+     *
+     * Returns a gift's units to platform inventory. All-or-nothing: if the user
+     * no longer holds (unlisted) the full gifted quantity — because they sold,
+     * listed, or otherwise moved some — the reversal is refused rather than
+     * partially applied. The reversal is a `gift_reversal` transaction whose
+     * reference is deterministic (REV-<gift reference>); transactions.reference
+     * is unique, so a gift can be reversed at most once even under a race.
+     */
+    public function reverse(Request $request, User $user, string $reference)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        $admin       = $request->user();
+        $reversalRef = 'REV-' . $reference;
+
+        try {
+            $result = DB::transaction(function () use ($user, $reference, $reversalRef, $data, $admin) {
+
+                $recipient = User::where('id', $user->id)->lockForUpdate()->firstOrFail();
+
+                $gift = Transaction::where('reference', $reference)
+                    ->where('user_id', $recipient->id)
+                    ->where('type', 'gift')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $gift) {
+                    throw ValidationException::withMessages(['reference' => 'Gift not found for this user.']);
+                }
+
+                if (Transaction::where('reference', $reversalRef)->exists()) {
+                    throw ValidationException::withMessages(['reference' => 'This gift has already been reversed.']);
+                }
+
+                $land = Land::where('id', $gift->land_id)->lockForUpdate()->firstOrFail();
+                $units = (int) $gift->units;
+
+                $holding = DB::table('user_land')
+                    ->where('user_id', $recipient->id)
+                    ->where('land_id', $land->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                $held = (int) ($holding->units ?? 0);
+
+                $listed = (int) MarketplaceListing::where('seller_id', $recipient->id)
+                    ->where('land_id', $land->id)
+                    ->where('status', 'active')
+                    ->sum('units_for_sale');
+
+                if ($held - $listed < $units) {
+                    throw ValidationException::withMessages([
+                        'units' => $listed > 0
+                            ? "Cannot reverse: the user holds {$held} unit(s) of this property and {$listed} are listed on the marketplace."
+                            : "Cannot reverse: the user now holds only {$held} unit(s) of this property (needs {$units}).",
+                    ]);
+                }
+
+                // 1. Take the units back from the holding.
+                if ($held - $units <= 0) {
+                    DB::table('user_land')
+                        ->where('user_id', $recipient->id)->where('land_id', $land->id)->delete();
+                } else {
+                    DB::table('user_land')
+                        ->where('user_id', $recipient->id)->where('land_id', $land->id)
+                        ->update(['units' => $held - $units, 'updated_at' => now()]);
+                }
+
+                // 2. Purchase record (cost basis was 0 for the gift, so paid is unchanged).
+                $purchase = Purchase::where('user_id', $recipient->id)
+                    ->where('land_id', $land->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($purchase) {
+                    $purchase->decrement('units', min($units, (int) $purchase->units));
+
+                    if ($purchase->fresh()->units <= 0) {
+                        $purchase->update(['status' => 'reversed']);
+                    }
+                }
+
+                // 3. Return units to platform inventory.
+                $land->increment('available_units', $units);
+                $land->is_available = true;
+                $land->save();
+
+                // 4. Reversal transaction + audit trail.
+                $reversal = Transaction::create([
+                    'user_id'          => $recipient->id,
+                    'land_id'          => $land->id,
+                    'type'             => 'gift_reversal',
+                    'units'            => $units,
+                    'amount_kobo'      => 0,
+                    'status'           => 'completed',
+                    'reference'        => $reversalRef,
+                    'message'          => $data['reason'],
+                    'transaction_date' => now(),
+                ]);
+
+                AdminActionLog::record(
+                    $admin,
+                    'units.gift_reverse',
+                    'User',
+                    $recipient->id,
+                    [
+                        'land_id'            => $land->id,
+                        'units'              => $units,
+                        'reason'             => $data['reason'],
+                        'gift_reference'     => $reference,
+                        'reversal_reference' => $reversalRef,
+                    ],
+                    request()->ip(),
+                );
+
+                return [
+                    'recipient' => $recipient,
+                    'land'      => $land->fresh(),
+                    'reversal'  => $reversal,
+                    'purchase'  => $purchase?->fresh(),
+                    'units'     => $units,
+                ];
+            });
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Two concurrent reversals raced past the exists() check.
+            throw ValidationException::withMessages(['reference' => 'This gift has already been reversed.']);
+        } catch (\Throwable $e) {
+            Log::error('Admin gift reversal failed', [
+                'error'     => $e->getMessage(),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+                'admin_id'  => $admin->id,
+                'target_id' => $user->id,
+                'reference' => $reference,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Reversal failed. No units were moved.',
+            ], 500);
+        }
+
+        $recipient = $result['recipient'];
+        $land      = $result['land'];
+
+        Log::channel('audit')->info('units_gift_reversed', [
+            'admin_id'           => $admin->id,
+            'recipient_id'       => $recipient->id,
+            'land_id'            => $land->id,
+            'units'              => $result['units'],
+            'gift_reference'     => $reference,
+            'reversal_reference' => $reversalRef,
+            'ip'                 => $request->ip(),
+            'timestamp'          => now()->toIso8601String(),
+        ]);
+
+        try {
+            // Revokes the certificate when the holding hits zero; otherwise
+            // refreshes it to the reduced unit count.
+            if ($result['purchase']) {
+                $this->certificateService->issue($result['purchase']);
+            }
+
+            // Reuse the real land-cache invalidation (list, map and item caches).
+            // LandUnitsSold also triggers a "sale" notification, so call the
+            // listener directly rather than dispatching that event.
+            app(ClearLandCache::class)->handle(
+                (object) ['landId' => $land->id]
+            );
+            $recipient->notify(new UnitsGiftReversed($result['reversal']));
+        } catch (\Throwable $e) {
+            Log::error('Gift reversal post-commit step failed', [
+                'reference' => $reversalRef,
+                'error'     => $e->getMessage(),
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Reversed gift of {$result['units']} unit(s) of {$land->title} from {$recipient->name}.",
+            'data'    => [
+                'reversal_reference' => $reversalRef,
+                'units'              => $result['units'],
+                'remaining_units'    => $land->available_units,
+            ],
+        ]);
     }
 
     /**
