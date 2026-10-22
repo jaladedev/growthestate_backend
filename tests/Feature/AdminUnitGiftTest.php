@@ -73,6 +73,8 @@ describe('Admin unit gifting', function () {
             ->assertStatus(201)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.units', 5)
+            ->assertJsonPath('data.price_per_unit_kobo', 100_000)
+            ->assertJsonPath('data.value_kobo', 500_000)
             ->assertJsonPath('data.remaining_units', 95);
 
         $this->assertDatabaseHas('lands', ['id' => $landId, 'available_units' => 95]);
@@ -395,6 +397,9 @@ describe('Admin gift reversal', function () {
         expect($rows[$keep]['reversed'])->toBeFalse();
         expect($rows[$reversed]['reversed'])->toBeTrue();
         expect($rows[$keep]['land_title'])->toBe('Gift Plot');
+        expect($rows[$keep]['price_per_unit_kobo'])->toBe(100_000);
+        expect($rows[$keep]['value_kobo'])->toBe(200_000);
+        expect($rows[$reversed]['value_kobo'])->toBe(300_000);
     });
 
     it('forbids staff without units.gift from listing or reversing', function () {

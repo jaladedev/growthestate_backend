@@ -205,6 +205,8 @@ class AdminUnitGiftController extends Controller
                 'recipient'       => $recipient->only('id', 'name', 'email'),
                 'land'            => ['id' => $land->id, 'title' => $land->title],
                 'units'           => $units,
+                'price_per_unit_kobo' => (int) ($land->current_price_per_unit_kobo ?? 0),
+                'value_kobo'          => $units * (int) ($land->current_price_per_unit_kobo ?? 0),
                 'remaining_units' => $land->available_units,
                 'certificate'     => $certificate ? [
                     'cert_number' => $certificate->cert_number,
@@ -220,7 +222,7 @@ class AdminUnitGiftController extends Controller
      */
     public function index(User $user)
     {
-        $gifts = Transaction::with('land:id,title')
+        $gifts = Transaction::with(['land:id,title', 'land.latestPrice'])
             ->where('user_id', $user->id)
             ->where('type', 'gift')
             ->orderByDesc('id')
@@ -240,6 +242,10 @@ class AdminUnitGiftController extends Controller
                 'land_id'    => $g->land_id,
                 'land_title' => $g->land?->title,
                 'units'      => $g->units,
+                // Current market value (units × the land's latest price) — not the
+                // price at gift time, which isn't stored on the transaction.
+                'price_per_unit_kobo' => (int) ($g->land?->current_price_per_unit_kobo ?? 0),
+                'value_kobo'          => (int) $g->units * (int) ($g->land?->current_price_per_unit_kobo ?? 0),
                 'reason'     => $g->message,
                 'gifted_at'  => $g->transaction_date,
                 'reversed'   => $reversedRefs->has('REV-' . $g->reference),
